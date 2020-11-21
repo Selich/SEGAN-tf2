@@ -2,18 +2,13 @@
 
 ### Introduction
 
-This is the repository of the SEGAN project. Our original paper can be found [here](https://arxiv.org/abs/1703.09452), and test samples are available [here](http://veu.talp.cat/segan/).
+This is the repository of the SEGAN project. The original paper can be found [here](https://arxiv.org/abs/1703.09452), and test samples are available [here](http://veu.talp.cat/segan/).
 
 In this work a Generative Adversarial approach has been taken to do speech enhancement (i.e. removing noise from corrupted speech signals) with a fully convolutional architecture schematized as follows:
 
 ![SEGAN_G](assets/segan_g.png)
 
 This model deals with raw speech waveforms on many noise conditions at different SNRs (40 at training time and 20 during test). It also models the speech characteristics from many speakers mixed within the same structure (without any supervision of identities), which makes the generative structure generalizable in the noise and speaker dimensions.
-
-**All the project is developed with TensorFlow**. There are two repositories that were good references on how GANs are defined and deployed:
-
-* [improved-gan](https://github.com/openai/improved-gan): implementing improvements to train GANs in a more stable way
-*  [DCGAN-tensorflow](https://github.com/carpedm20/DCGAN-tensorflow): implementation of the DCGAN in tensorflow
 
 ### Dependencies
 
@@ -77,25 +72,3 @@ CUDA_VISIBLE_DEVICES="" python main.py --init_noise_std 0. --save_path segan_v1.
 To make things easy, there is a bash script called `clean_wav.sh` that accepts as input argument the test filename and
 the save path.
 
-### Authors
-
-* **Santiago Pascual** (TALP-UPC, BarcelonaTech)
-* **Antonio Bonafonte** (TALP-UPC, BarcelonaTech)
-* **Joan Serrà** (Telefónica Research, Barcelona)
-
-### Reference
-
-If the code of this repository was useful for your research, please cite our work:
-
-```
-@article{pascual2017segan,
-  title={SEGAN: Speech Enhancement Generative Adversarial Network},
-  author={Pascual, Santiago and Bonafonte, Antonio and Serr{\`a}, Joan},
-  journal={arXiv preprint arXiv:1703.09452},
-  year={2017}
-}
-```
-
-### Contact
-
-e-mail: santi.pascual@upc.edu
