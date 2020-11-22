@@ -21,10 +21,6 @@ def _bytes_feature(value):
   return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 def slice_signal(signal, window_size, stride=0.5):
-    """ Return windows of the given signal by sweeping in stride fractions
-        of window
-    """
-    assert signal.ndim == 1, signal.ndim
     n_samples = signal.shape[0]
     offset = int(window_size * stride)
     slices = []
@@ -42,95 +38,89 @@ def read_and_slice(filename, wav_canvas_size, stride=0.5):
     fm, wav_data = wavfile.read(filename)
     if fm != 16000:
         raise ValueError('Sampling rate is expected to be 16kHz!')
-    signals = slice_signal(wav_data, wav_canvas_size, stride)
-    return signals
+    return slice_signal(wav_data, wav_canvas_size, stride)
 
 
 def encoder_proc(wav_filename, noisy_path, noisy_only_path, out_file, wav_canvas_size):
-    """ Read and slice the wav and noisy files and write to TFRecords.
-        out_file: TFRecordWriter.
-    """
     ppath, wav_fullname = os.path.split(wav_filename)
-    noisy_filename = os.path.join(noisy_path, wav_fullname)
+    noisy_filename      = os.path.join(noisy_path, wav_fullname)
     noisy_only_filename = os.path.join(noisy_only_path, wav_fullname)
-    wav_signals = read_and_slice(wav_filename, wav_canvas_size)
-    noisy_signals = read_and_slice(noisy_filename, wav_canvas_size)
-    noisy_only_signals = read_and_slice(noisy_only_filename, wav_canvas_size)
-    len1 = len(noisy_signals)
-    len2 = len(noisy_only_signals)
-    if(len1 != len2):
-        print ("Error")
-    assert wav_signals.shape == noisy_signals.shape, noisy_signals.shape
+    wav_signals         = read_and_slice(wav_filename, wav_canvas_size)
+    noisy_signals       = read_and_slice(noisy_filename, wav_canvas_size)
+    noisy_only_signals  = read_and_slice(noisy_only_filename, wav_canvas_size)
+
+    if(len(noisy_signals) != len(noisy_only_signals)): print ("Error")
+
+    assert wav_signals.shape == noisy_signals.shape,      noisy_signals.shape
     assert wav_signals.shape == noisy_only_signals.shape, noisy_only_signals.shape
 
     for (wav, noisy, noisy_only) in zip(wav_signals, noisy_signals, noisy_only_signals):
-        wav_raw = wav.tostring()
-        noisy_raw = noisy.tostring()
-        noisy_only_raw = noisy_only.tostring()
+        wav_raw        = wav.tobytes()
+        noisy_raw      = noisy.tobytes()
+        noisy_only_raw = noisy_only.tobytes()
         example = tf.train.Example(features=tf.train.Features(feature={
             'wav_raw': _bytes_feature(wav_raw),
             'noisy_raw': _bytes_feature(noisy_raw),
             'noisy_only_raw': _bytes_feature(noisy_only_raw)}))
         out_file.write(example.SerializeToString())
 
-def main(opts):
-    if not os.path.exists(opts.save_path):
-        # make save path if it does not exist
-        os.makedirs(opts.save_path)
-    # set up the output filepath
-    out_filepath = os.path.join(opts.save_path, opts.out_file)
+def main(args):
+    save_path = args.save_path
+    force_gen = args.force_gen
+    out_file  = args.out_file
+    cfg       = args.cfg
+
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+
+    out_filepath = os.path.join(save_path, out_file)
+
     if os.path.splitext(out_filepath)[1] != '.tfrecords':
-        # if wrong extension or no extension appended, put .tfrecords
         out_filepath += '.tfrecords'
     else:
         out_filename, ext = os.path.splitext(out_filepath)
         out_filepath = out_filename + ext
-    # check if out_file exists and if force flag is set
-    if os.path.exists(out_filepath) and not opts.force_gen:
+
+    if os.path.exists(out_filepath) and not args.force_gen:
         raise ValueError('ERROR: {} already exists. Set force flag (--force-gen) to '
                          'overwrite. Skipping this speaker.'.format(out_filepath))
-    elif os.path.exists(out_filepath) and opts.force_gen:
+
+    elif os.path.exists(out_filepath) and force_gen:
         print('Will overwrite previously existing tfrecords')
         os.unlink(out_filepath)
-    with open(opts.cfg) as cfh:
-        # read the configuration description
-        cfg_desc = toml.loads(cfh.read())
-        beg_enc_t = timeit.default_timer()
-        out_file = tf.python_io.TFRecordWriter(out_filepath)
-        # process the acoustic and textual data now
-        for dset_i, (dset, dset_desc) in enumerate(cfg_desc.iteritems()):
-            print('-' * 50)
-            wav_dir = dset_desc['clean']
-            wav_files = [os.path.join(wav_dir, wav) for wav in
-                           os.listdir(wav_dir) if wav.endswith('.wav')]
-            noisy_dir = dset_desc['noisy']
-            noisy_only_dir = dset_desc['noisy_only']
-            nfiles = len(wav_files)
+
+    print(out_filepath)
+
+    with open(cfg) as config:
+        config_desc = toml.loads(config.read())
+
+        out_file    = tf.io.TFRecordWriter(out_filepath)
+
+        for _, (dataset, dataset_desc) in enumerate(config_desc.items()):
+
+            wav_dir        = dataset_desc['clean']
+            wav_files      = [os.path.join(wav_dir, wav)
+                              for wav in os.listdir(wav_dir) if wav.endswith('.wav')]
+
             for m, wav_file in enumerate(wav_files):
-                print('Processing wav file {}/{} {}{}'.format(m + 1,
-                                                              nfiles,
-                                                              wav_file,
-                                                              ' ' * 10),
-                      end='\r')
                 sys.stdout.flush()
-                encoder_proc(wav_file, noisy_dir, noisy_only_dir, out_file, 2 ** 14)
+                encoder_proc(
+                    wav_file,
+                    dataset_desc['noisy'],
+                    dataset_desc['noisy_only'],
+                    out_file,
+                    2 ** 14)
+
         out_file.close()
-        end_enc_t = timeit.default_timer() - beg_enc_t
-        print('')
-        print('*' * 50)
-        print('Total processing and writing time: {} s'.format(end_enc_t))
+        print('Total processing')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='cfg/e2e_maker.cfg',
-                        help='File containing the description of datasets '
-                             'to extract the info to make the TFRecords.')
-    parser.add_argument('--save_path', type=str, default='data/',
-                        help='Path to save the dataset')
-    parser.add_argument('--out_file', type=str, default='segan.tfrecords',
-                        help='Output filename')
-    parser.add_argument('--force-gen', dest='force_gen', action='store_true',
-                        help='Flag to force overwriting existing dataset.')
+    parser.add_argument('--cfg', type=str, default='cfg/e2e_maker.cfg')
+    parser.add_argument('--save_path', type=str, default='data/')
+    parser.add_argument('--out_file', type=str, default='segan.tfrecords')
+    parser.add_argument('--force-gen', dest='force_gen', action='store_true')
+
     parser.set_defaults(force_gen=False)
-    opts = parser.parse_args()
-    main(opts)
+    args = parser.parse_args()
+    main(args)
